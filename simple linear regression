@@ -1,0 +1,98 @@
+``` R
+library(magrittr)
+library(repr)
+library(caret)
+library(ROCR)
+library(pROC)
+library(lubridate)
+library(e1071)
+library(MLmetrics)
+library(openxlsx)
+
+setwd("B:/Brian/New folder/R/machine-learning/datahack4fi/Principles-of-Machine-Learning-R-master/finalexam")
+
+dta1 <- read.csv("AdvWorksCusts.csv",stringsAsFactors = F)
+ind <- which(duplicated(dta1$CustomerID)==FALSE)
+dta1 <- dta1[ind,]
+
+dta2 <- read.csv("AW_AveMonthSpend.csv",stringsAsFactors = F)
+ind1 <- which(duplicated(dta2$CustomerID)==FALSE)
+dta2 <- dta2[ind,]
+
+
+dta3 <- read.csv("AW_BikeBuyer.csv",stringsAsFactors = F)
+ind <- which(duplicated(dta3$CustomerID)==FALSE)
+dta3 <- dta3[ind,]
+
+test <- read.csv("AW_test.csv",stringsAsFactors = F)
+
+dta_join <- dta2 %>%
+  inner_join(dta3)
+dta_join1 <- dta1 %>%
+  inner_join(dta_join)
+
+dta_join1$age <- 1998 - year(dta_join1$BirthDate)
+dta_join1$age_grp <- ifelse(dta_join1$age < 25 , 'under 25',
+                            ifelse(dta_join1$age >= 25 & dta_join1$age <= 45,'25 and 45',
+                                   ifelse(dta_join1$age > 45 & dta_join1$age <= 55, '45 and 55','above 55')))
+
+#classification
+# dta_join1$BikeBuyer <- ifelse(dta_join1$BikeBuyer == 1, 'Bought', 'didnt')
+# dta_join1$BikeBuyer <- factor(dta_join1$BikeBuyer, levels = c('Bought', 'didnt'))
+# num_cols <- c('age',"HomeOwnerFlag","NumberCarsOwned","NumberChildrenAtHome",
+#               "TotalChildren","YearlyIncome","AveMonthSpend")
+num_cols <- c("HomeOwnerFlag","NumberCarsOwned","NumberChildrenAtHome",
+              "TotalChildren","YearlyIncome")
+train <- dta_join1
+#scaling the data
+train[,num_cols] <- as.numeric(train[,num_cols])
+preProcValues <- preProcess(train[,num_cols], method = c("center", "scale"))
+train[,num_cols] = predict(preProcValues, train[,num_cols])
+test[,num_cols] = predict(preProcValues, test[,num_cols])
+
+# for (col in colnames(dta_join1)){
+#   if (is.numeric(dta_join1[,col]) == TRUE){
+#     append(num_cols,col)
+#   }
+#}
+#logit regression
+set.seed(5566)
+logit_mod = glm(BikeBuyer ~ Gender + Education + MaritalStatus + NumberCarsOwned + 
+                     NumberChildrenAtHome  + TotalChildren +
+                     YearlyIncome , 
+              family = 'binomial',
+             data = train)
+#linear 
+lin_mod = lm(AveMonthSpend ~ Gender + Education + MaritalStatus + NumberCarsOwned + 
+               NumberChildrenAtHome  + TotalChildren +
+               YearlyIncome,
+             data = train)
+summary(lin_mod)$coefficients
+score = predict(lin_mod, newdata = test)
+print_metrics = function(lin_mod, df, score){
+  resids = df$y - score
+  resids2 = resids**2
+  N = length(score)
+  r2 = as.character(round(summary(lin_mod)$r.squared, 4))
+  adj_r2 = as.character(round(summary(lin_mod)$adj.r.squared, 4))
+  cat(paste('Mean Square Error      = ', as.character(round(sum(resids2)/N, 4)), '\n'))
+  cat(paste('Root Mean Square Error = ', as.character(round(sqrt(sum(resids2)/N), 4)), '\n'))
+  cat(paste('Mean Absolute Error    = ', as.character(round(sum(abs(resids))/N, 4)), '\n'))
+  cat(paste('Median Absolute Error  = ', as.character(round(median(abs(resids)), 4)), '\n'))
+  cat(paste('R^2                    = ', r2, '\n'))
+  cat(paste('Adjusted R^2           = ', adj_r2, '\n'))
+}
+
+print_metrics(lin_mod, test, score) 
+
+train$props = predict(lin_mod,train,type = 'response')
+train$props <- round(train$props)
+table(train$BikeBuyer,train$props)
+
+
+test$ave_test = predict(lin_mod, newdata = test, type = 'response')
+
+test$ave_test <- round(test$ave_test)
+write.xlsx(test,'test2.xlsx')
+
+```
